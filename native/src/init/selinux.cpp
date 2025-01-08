@@ -64,7 +64,7 @@ bool MagiskInit::hijack_sepolicy() {
         // This only happens on Android 8.0 - 9.0
 
         char buf[4096];
-        ssprintf(buf, sizeof(buf), "%s/fstab/compatible", config->dt_dir);
+        ssprintf(buf, sizeof(buf), "%s/fstab/compatible", config.dt_dir);
         dt_compat = full_read(buf);
         if (dt_compat.empty()) {
             // Device does not do early mount and uses monolithic policy
@@ -106,7 +106,7 @@ bool MagiskInit::hijack_sepolicy() {
         int fd = xopen(MOCK_COMPAT, O_WRONLY);
 
         char buf[4096];
-        ssprintf(buf, sizeof(buf), "%s/fstab/compatible", config->dt_dir);
+        ssprintf(buf, sizeof(buf), "%s/fstab/compatible", config.dt_dir);
         xumount2(buf, MNT_DETACH);
 
         hijack();
@@ -130,6 +130,9 @@ bool MagiskInit::hijack_sepolicy() {
 
     // Load patched policy into kernel
     sepol->to_file(SELINUX_LOAD);
+
+    // restore mounted files' context after sepolicy loaded
+    rust::reset_overlay_contexts();
 
     // Write to the enforce node ONLY after sepolicy is loaded. We need to make sure
     // the actual init process is blocked until sepolicy is loaded, or else

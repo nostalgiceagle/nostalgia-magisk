@@ -340,6 +340,11 @@ impl Utf8CStr {
         Self::from_cstr(unsafe { CStr::from_ptr(ptr) })
     }
 
+    pub unsafe fn from_ptr_unchecked<'a>(ptr: *const c_char) -> &'a Utf8CStr {
+        let cstr = CStr::from_ptr(ptr);
+        Self::from_bytes_unchecked(cstr.to_bytes_with_nul())
+    }
+
     #[inline(always)]
     pub fn as_bytes_with_nul(&self) -> &[u8] {
         &self.0
@@ -405,8 +410,8 @@ macro_rules! const_assert_eq {
 }
 
 // Assert ABI layout
-const_assert_eq!(mem::size_of::<&Utf8CStr>(), mem::size_of::<[usize; 2]>());
-const_assert_eq!(mem::align_of::<&Utf8CStr>(), mem::align_of::<[usize; 2]>());
+const_assert_eq!(size_of::<&Utf8CStr>(), size_of::<[usize; 2]>());
+const_assert_eq!(align_of::<&Utf8CStr>(), align_of::<[usize; 2]>());
 
 // File system path extensions types
 
@@ -471,7 +476,7 @@ impl<'a> FsPathBuf<'a> {
     }
 }
 
-impl<'a> Deref for FsPathBuf<'a> {
+impl Deref for FsPathBuf<'_> {
     type Target = FsPath;
 
     fn deref(&self) -> &FsPath {
@@ -479,7 +484,7 @@ impl<'a> Deref for FsPathBuf<'a> {
     }
 }
 
-impl<'a> DerefMut for FsPathBuf<'a> {
+impl DerefMut for FsPathBuf<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         FsPath::from_mut(&mut self.0)
     }

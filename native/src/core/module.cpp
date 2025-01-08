@@ -51,13 +51,14 @@ bool dir_node::prepare() {
     for (auto it = children.begin(); it != children.end();) {
         // We also need to upgrade to tmpfs node if any child:
         // - Target does not exist
-        // - Source or target is a symlink (since we cannot bind mount symlink)
+        // - Source or target is a symlink (since we cannot bind mount symlink) or whiteout
         bool cannot_mnt;
         if (struct stat st{}; lstat(it->second->node_path().data(), &st) != 0) {
-            cannot_mnt = true;
+            // if it's a whiteout, we don't care if the target doesn't exist
+            cannot_mnt = !it->second->is_wht();
         } else {
             it->second->set_exist(true);
-            cannot_mnt = it->second->is_lnk() || S_ISLNK(st.st_mode);
+            cannot_mnt = it->second->is_lnk() || S_ISLNK(st.st_mode) || it->second->is_wht();
         }
 
         if (cannot_mnt) {
@@ -107,6 +108,14 @@ void dir_node::collect_module_files(const char *module, int dfd) {
                 node->collect_module_files(module, dirfd(dir.get()));
             }
         } else {
+            if (entry->d_type == DT_CHR) {
+                struct stat st{};
+                int ret = fstatat(dirfd(dir.get()), entry->d_name, &st, AT_SYMLINK_NOFOLLOW);
+                if (ret == 0 && st.st_rdev == 0) {
+                    // if the file is a whiteout, mark it as such
+                    entry->d_type = DT_WHT;
+                }
+            }
             emplace<module_node>(entry->d_name, module, entry);
         }
     }
@@ -136,6 +145,10 @@ void node_entry::create_and_mount(const char *reason, const string &src, bool ro
 }
 
 void module_node::mount() {
+    if (is_wht()) {
+        VLOGD("delete", "null", node_path().data());
+        return;
+    }
     std::string path = module + (parent()->root()->prefix + node_path());
     string mnt_src = module_mnt + path;
     {
@@ -177,26 +190,23 @@ void tmpfs_node::mount() {
 class magisk_node : public node_entry {
 public:
     explicit magisk_node(const char *name) : node_entry(name, DT_REG, this) {}
+    explicit magisk_node(const char *name, const char *target)
+    : node_entry(name, DT_LNK, this), target(target)  {}
 
     void mount() override {
-        const string src = get_magisk_tmp() + "/"s + name();
-        if (access(src.data(), F_OK))
-            return;
-
-        const string dir_name = isa<tmpfs_node>(parent()) ? parent()->worker_path() : parent()->node_path();
-        if (name() == "magisk") {
-            for (int i = 0; applet_names[i]; ++i) {
-                string dest = dir_name + "/" + applet_names[i];
-                VLOGD("create", "./magisk", dest.data());
-                xsymlink("./magisk", dest.data());
-            }
+        if (target) {
+            string dest = isa<tmpfs_node>(parent()) ? worker_path() : node_path();
+            VLOGD("create", target, dest.data());
+            xsymlink(target, dest.data());
         } else {
-            string dest = dir_name + "/supolicy";
-            VLOGD("create", "./magiskpolicy", dest.data());
-            xsymlink("./magiskpolicy", dest.data());
+            string src = get_magisk_tmp() + "/"s + name();
+            if (access(src.data(), F_OK) == 0)
+                create_and_mount("magisk", src, true);
         }
-        create_and_mount("magisk", src, true);
     }
+
+private:
+    const char *target = nullptr;
 };
 
 class zygisk_node : public node_entry {
@@ -231,10 +241,10 @@ static void inject_magisk_bins(root_node *system) {
     bin->insert(new magisk_node("magisk"));
     bin->insert(new magisk_node("magiskpolicy"));
 
-    // Also delete all applets to make sure no modules can override it
+    // Also insert all applets to make sure no one can override it
     for (int i = 0; applet_names[i]; ++i)
-        delete bin->extract(applet_names[i]);
-    delete bin->extract("supolicy");
+        bin->insert(new magisk_node(applet_names[i], "./magisk"));
+    bin->insert(new magisk_node("supolicy", "./magiskpolicy"));
 }
 
 static void inject_zygisk_libs(root_node *system) {

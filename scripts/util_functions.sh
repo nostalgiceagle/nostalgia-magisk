@@ -641,7 +641,7 @@ install_module() {
 
   # Extract prop file
   unzip -o "$ZIPFILE" module.prop -d $TMPDIR >&2
-  [ ! -f $TMPDIR/module.prop ] && abort "! Unable to extract zip file!"
+  [ ! -f $TMPDIR/module.prop ] && abort "! This zip is not a Magisk module!"
 
   local MODDIRNAME=modules
   $BOOTMODE && MODDIRNAME=modules_update
@@ -700,6 +700,11 @@ install_module() {
   for TARGET in $REPLACE; do
     ui_print "- Replace target: $TARGET"
     mktouch $MODPATH$TARGET/.replace
+  done
+
+  for TARGET in $REMOVE; do
+    ui_print "- Remove target: $TARGET"
+    mknod $MODPATH$TARGET c 0 0
   done
 
   if $BOOTMODE; then

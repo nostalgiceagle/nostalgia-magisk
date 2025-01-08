@@ -7,7 +7,6 @@
 #include <base.hpp>
 #include <core.hpp>
 #include <selinux.hpp>
-#include <db.hpp>
 #include <flags.h>
 
 using namespace std;
@@ -128,20 +127,8 @@ static void poll_ctrl_handler(pollfd *pfd) {
     }
 }
 
-const MagiskD &MagiskD::get() {
-    return *reinterpret_cast<const MagiskD*>(&rust::get_magiskd());
-}
-
-const rust::MagiskD *MagiskD::operator->() const {
-    return reinterpret_cast<const rust::MagiskD*>(this);
-}
-
-const rust::MagiskD &MagiskD::as_rust() const {
-    return *operator->();
-}
-
-void MagiskD::reboot() const {
-    if (as_rust().is_recovery())
+void MagiskD::reboot() const noexcept {
+    if (is_recovery())
         exec_command_sync("/system/bin/reboot", "recovery");
     else
         exec_command_sync("/system/bin/reboot");
@@ -163,7 +150,7 @@ static void handle_request_async(int client, int code, const sock_cred &cred) {
         close(client);
         break;
     case +RequestCode::SQLITE_CMD:
-        exec_sql(client);
+        MagiskD().db_exec(client);
         break;
     case +RequestCode::REMOVE_MODULES: {
         int do_reboot = read_int(client);
@@ -171,7 +158,7 @@ static void handle_request_async(int client, int code, const sock_cred &cred) {
         write_int(client, 0);
         close(client);
         if (do_reboot) {
-            MagiskD::get().reboot();
+            MagiskD().reboot();
         }
         break;
     }
@@ -196,7 +183,7 @@ static void handle_request_sync(int client, int code) {
         write_int(client, MAGISK_VER_CODE);
         break;
     case +RequestCode::START_DAEMON:
-        MagiskD::get()->setup_logfile();
+        MagiskD().setup_logfile();
         break;
     case +RequestCode::STOP_DAEMON: {
         // Unmount all overlays
@@ -298,7 +285,7 @@ static void handle_request(pollfd *pfd) {
         exec_task([=, fd = client.release()] { handle_request_async(fd, code, cred); });
     } else {
         exec_task([=, fd = client.release()] {
-            MagiskD::get()->boot_stage_handler(fd, code);
+            MagiskD().boot_stage_handler(fd, code);
         });
     }
 }
