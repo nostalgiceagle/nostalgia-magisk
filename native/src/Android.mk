@@ -29,6 +29,10 @@ LOCAL_SRC_FILES := \
     core/core-rs.cpp \
     core/resetprop/resetprop.cpp \
     core/su/su.cpp \
+    core/zygisk/entry.cpp \
+    core/zygisk/main.cpp \
+    core/zygisk/module.cpp \
+    core/zygisk/hook.cpp \
     core/su/connect.cpp \
     core/su/pts.cpp \
     core/su/su_daemon.cpp \
